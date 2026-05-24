@@ -61,14 +61,11 @@ export default function App() {
 
   // Toggle owned state and update global database
   const toggle = async (id: string) => {
-    let nextOwned: Set<string>;
-    setOwned((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      nextOwned = next;
-      return next;
-    });
+    const nextOwned = new Set(owned);
+    if (nextOwned.has(id)) nextOwned.delete(id);
+    else nextOwned.add(id);
+    
+    setOwned(nextOwned);
 
     setSyncStatus('saving');
     try {
@@ -80,7 +77,7 @@ export default function App() {
         body: JSON.stringify({
           name: 'Panini 2026 - Colombia Faltantes',
           data: {
-            owned: [...nextOwned!]
+            owned: [...nextOwned]
           }
         })
       });
