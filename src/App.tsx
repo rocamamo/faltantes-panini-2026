@@ -20,6 +20,7 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [syncStatus, setSyncStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [search, setSearch] = useState<string>('');
 
   // Load shared data on mount
   useEffect(() => {
@@ -128,6 +129,15 @@ export default function App() {
     if (indexA !== indexB) return indexA - indexB;
     return a.countryName.localeCompare(b.countryName, 'es');
   });
+
+  const searchQuery = search.trim().toLowerCase();
+  const filteredData = searchQuery
+    ? sortedData.filter(
+        (block) =>
+          block.countryName.toLowerCase().includes(searchQuery) ||
+          block.countryCode.toLowerCase().includes(searchQuery)
+      )
+    : sortedData;
 
   if (loading) {
     return (
@@ -241,20 +251,75 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="sticky top-0 z-20 bg-[#0f1419]/95 backdrop-blur-md border-b border-[#2d3a4d] px-4 md:px-8 py-2 md:py-3 flex flex-nowrap md:flex-wrap gap-2 overflow-x-auto md:overflow-x-visible overflow-y-hidden md:max-h-[40vh] md:overflow-y-auto nav-scrollbar snap-x snap-proximity shrink-0">
-        {sortedData.map((block) => (
-          <a
-            key={block.countryCode}
-            href={`#${slug(block.countryName)}`}
-            className="text-xs sm:text-sm px-3 md:px-4 py-2 inline-flex items-center rounded-md bg-[#1a2332] text-[#8b9cb3] no-underline border border-transparent whitespace-nowrap shrink-0 snap-start hover:text-[#e8eef5] hover:border-[#2d3a4d] hover:bg-[#202b3d] focus-visible:text-[#e8eef5] focus-visible:border-[#00a86b] focus-visible:ring-2 focus-visible:ring-[#00a86b] focus-visible:outline-none transition-colors"
+      <nav className="sticky top-0 z-20 bg-[#0f1419]/95 backdrop-blur-md border-b border-[#2d3a4d] px-4 md:px-8 py-2 md:py-3 flex flex-col gap-2 shrink-0">
+        {/* Search input */}
+        <div className="relative w-full max-w-sm">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={2}
+            stroke="currentColor"
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8b9cb3] pointer-events-none"
           >
-            {block.countryName} - {block.countryCode} ({block.items.length})
-          </a>
-        ))}
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+          </svg>
+          <input
+            id="country-search"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por país o código (ej: Colombia, COL)…"
+            className="w-full bg-[#1a2332] border border-[#2d3a4d] text-[#e8eef5] placeholder-[#8b9cb3]/60 text-sm rounded-lg py-2 pl-9 pr-9 focus:outline-none focus:border-[#00a86b] focus:ring-1 focus:ring-[#00a86b] transition-colors"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8b9cb3] hover:text-[#e8eef5] transition-colors"
+              title="Limpiar búsqueda"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Country pills */}
+        <div className="flex flex-nowrap md:flex-wrap gap-2 overflow-x-auto md:overflow-x-visible overflow-y-hidden md:max-h-[30vh] md:overflow-y-auto nav-scrollbar snap-x snap-proximity">
+          {filteredData.map((block) => (
+            <a
+              key={block.countryCode}
+              href={`#${slug(block.countryName)}`}
+              className="text-xs sm:text-sm px-3 md:px-4 py-2 inline-flex items-center rounded-md bg-[#1a2332] text-[#8b9cb3] no-underline border border-transparent whitespace-nowrap shrink-0 snap-start hover:text-[#e8eef5] hover:border-[#2d3a4d] hover:bg-[#202b3d] focus-visible:text-[#e8eef5] focus-visible:border-[#00a86b] focus-visible:ring-2 focus-visible:ring-[#00a86b] focus-visible:outline-none transition-colors"
+            >
+              {block.countryName} - {block.countryCode} ({block.items.length})
+            </a>
+          ))}
+          {filteredData.length === 0 && (
+            <span className="text-xs text-[#8b9cb3]/60 py-2 italic">Sin coincidencias</span>
+          )}
+        </div>
       </nav>
 
       <main className="flex-1 w-full max-w-[1200px] mx-auto px-4 md:px-8 pt-6 lg:pt-8 pb-12 lg:pb-24">
-        {sortedData.map((block) => {
+        {filteredData.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 text-center gap-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 text-[#2d3a4d]">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+            </svg>
+            <p className="text-[#8b9cb3] text-base font-medium">
+              No se encontró ningún país con <span className="text-[#e8eef5] font-semibold">&ldquo;{search}&rdquo;</span>
+            </p>
+            <button
+              onClick={() => setSearch('')}
+              className="text-xs px-4 py-2 rounded-full border border-[#2d3a4d] text-[#8b9cb3] hover:text-[#e8eef5] hover:border-[#4a6078] transition-colors"
+            >
+              Limpiar búsqueda
+            </button>
+          </div>
+        )}
+        {filteredData.map((block) => {
           const id = slug(block.countryName);
           return (
              <section key={block.countryCode} id={id} className="mb-10 sm:mb-14 scroll-mt-24 md:scroll-mt-32">
