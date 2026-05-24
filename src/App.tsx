@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { DATA, slug, COUNTRY_ORDER } from './data';
 
 const STORAGE_KEY = 'paniniFaltantes2026Marcadas';
+const API_URL = 'https://api.restful-api.dev/objects/ff8081819d82fab6019e57ab35f370e1';
 
 function loadSet(): Set<string> {
   try {
@@ -15,19 +16,100 @@ function loadSet(): Set<string> {
 }
 
 export default function App() {
-  const [owned, setOwned] = useState<Set<string>>(loadSet());
+  const [owned, setOwned] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState<boolean>(true);
+  const [syncStatus, setSyncStatus] = useState<'saved' | 'saving' | 'error'>('saved');
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
 
+  // Load shared data on mount
+  useEffect(() => {
+    let active = true;
+    async function fetchSharedData() {
+      try {
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('Failed to fetch from DB');
+        const json = await res.json();
+        const ownedList = json.data?.owned || [];
+        if (active) {
+          const loadedSet = new Set<string>(ownedList);
+          setOwned(loadedSet);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(ownedList));
+          setLastSynced(new Date());
+          setSyncStatus('saved');
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Error fetching shared database, using localStorage fallback:', err);
+        if (active) {
+          const localSet = loadSet();
+          setOwned(localSet);
+          setSyncStatus('error');
+          setLoading(false);
+        }
+      }
+    }
+    fetchSharedData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Sync to local backup whenever owned state changes locally (as secondary backup)
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...owned]));
   }, [owned]);
 
-  const toggle = (id: string) => {
+  // Toggle owned state and update global database
+  const toggle = async (id: string) => {
+    let nextOwned: Set<string>;
     setOwned((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      nextOwned = next;
       return next;
     });
+
+    setSyncStatus('saving');
+    try {
+      const res = await fetch(API_URL, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Panini 2026 - Colombia Faltantes',
+          data: {
+            owned: [...nextOwned!]
+          }
+        })
+      });
+      if (!res.ok) throw new Error('Failed to update DB');
+      setSyncStatus('saved');
+      setLastSynced(new Date());
+    } catch (err) {
+      console.error('Error syncing to database:', err);
+      setSyncStatus('error');
+    }
+  };
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    setSyncStatus('saving');
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error('Failed to fetch from DB');
+      const json = await res.json();
+      const ownedList = json.data?.owned || [];
+      const loadedSet = new Set<string>(ownedList);
+      setOwned(loadedSet);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ownedList));
+      setLastSynced(new Date());
+      setSyncStatus('saved');
+    } catch (err) {
+      console.error('Error refreshing from database:', err);
+      setSyncStatus('error');
+    }
   };
 
   let totalMissing = 0;
@@ -50,6 +132,35 @@ export default function App() {
     return a.countryName.localeCompare(b.countryName, 'es');
   });
 
+  if (loading) {
+    return (
+      <div className="font-sans text-[#e8eef5] min-h-screen bg-[#0f1419] flex flex-col justify-center items-center p-6">
+        <div className="bg-[#1a2332] border border-[#2d3a4d] rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden">
+          {/* Subtle glowing background orb */}
+          <div className="absolute -top-10 -left-10 w-40 h-40 bg-[#00a86b]/10 rounded-full blur-3xl"></div>
+          <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl"></div>
+          
+          {/* Spinner icon */}
+          <div className="relative flex justify-center mb-6">
+            <div className="w-16 h-16 border-4 border-[#2d3a4d] border-t-[#00a86b] rounded-full animate-spin"></div>
+            {/* Inner glowing pulse */}
+            <div className="absolute inset-0 m-auto w-10 h-10 bg-[#00a86b]/20 rounded-full animate-ping"></div>
+          </div>
+          
+          <h2 className="text-xl font-bold mb-2 tracking-wide text-[#e8eef5]">
+            Conectando Base de Datos
+          </h2>
+          <p className="text-[#8b9cb3] text-sm leading-relaxed mb-5">
+            Obteniendo el estado global de las láminas compartidas para Colombia...
+          </p>
+          <div className="text-xs bg-[#0f1419] border border-[#2d3a4d] text-[#8b9cb3] py-2 px-3 rounded-lg font-mono inline-block">
+            api.restful-api.dev/objects/...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="font-sans text-[#e8eef5] min-h-screen bg-[#0f1419] flex flex-col">
       <header className="border-b border-[#2d3a4d] bg-gradient-to-b from-[#152028] to-[#0f1419] px-4 md:px-8 pb-4 pt-[max(1rem,env(safe-area-inset-top,0px))]">
@@ -60,10 +171,71 @@ export default function App() {
             </h1>
             <p className="text-[#8b9cb3] text-sm sm:text-base max-w-3xl m-0">
               Lista generada a partir de las imágenes de tu carpeta (solo espacios vacíos visibles).
-              <strong className="text-[#e8eef5] font-semibold"> Toca o haz clic en una lámina</strong> para marcarla como conseguida; se guarda en este navegador.
+              <strong className="text-[#e8eef5] font-semibold"> Toca o haz clic en una lámina</strong> para marcarla como conseguida. Los cambios se guardan automáticamente en la nube y son visibles para todos los usuarios.
             </p>
+            
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              {/* Sync Status Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#1a2332] border border-[#2d3a4d] text-xs font-medium select-none">
+                {syncStatus === 'saved' && (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00a86b] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00a86b]"></span>
+                    </span>
+                    <span className="text-[#8b9cb3]">
+                      Base de datos: <span className="text-[#00a86b] font-semibold">Conectada</span>
+                      {lastSynced && ` · Sinc: ${lastSynced.toLocaleTimeString()}`}
+                    </span>
+                  </>
+                )}
+                {syncStatus === 'saving' && (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c9a227] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c9a227]"></span>
+                    </span>
+                    <span className="text-[#c9a227] font-semibold animate-pulse">
+                      Guardando cambios en la nube...
+                    </span>
+                  </>
+                )}
+                {syncStatus === 'error' && (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-bounce absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                    <span className="text-red-400">
+                      Error de sincronización (Modo Offline)
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {/* Refresh Button */}
+              <button
+                onClick={handleRefresh}
+                disabled={syncStatus === 'saving'}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1a2332] hover:bg-[#202b3d] active:bg-[#1a2332] border border-[#2d3a4d] hover:border-[#4a6078] text-xs font-medium text-[#8b9cb3] hover:text-[#e8eef5] transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none"
+                title="Actualizar datos con la nube"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth={2}
+                  stroke="currentColor"
+                  className={`w-3.5 h-3.5 ${syncStatus === 'saving' ? 'animate-spin text-[#c9a227]' : ''}`}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                Actualizar
+              </button>
+            </div>
           </div>
-          <div className="bg-[#1a2332] border border-[#2d3a4d] rounded-xl py-3 px-4 sm:px-6 text-center shrink-0 flex flex-row sm:flex-col items-center sm:items-stretch justify-between sm:justify-center gap-3 sm:gap-1">
+          
+          <div className="bg-[#1a2332] border border-[#2d3a4d] rounded-xl py-3 px-4 sm:px-6 text-center shrink-0 flex flex-row sm:flex-col items-center sm:items-stretch justify-between sm:justify-center gap-3 sm:gap-1 select-none">
             <div className="text-xs sm:text-sm text-[#8b9cb3] font-medium uppercase tracking-wider">Faltantes</div>
             <div className="text-2xl sm:text-3xl md:text-4xl font-bold text-[#e8eef5]">
               <span className="text-[#00a86b]">{totalMissing}</span> <span className="text-[#8b9cb3] text-lg sm:text-xl md:text-2xl font-medium">/ {totalItems}</span>
@@ -142,7 +314,7 @@ export default function App() {
                   );
                 })}
               </div>
-            </section>
+             </section>
           );
         })}
       </main>
